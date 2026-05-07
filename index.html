@@ -1,0 +1,2277 @@
+<!DOCTYPE html>
+<html lang="es" data-mode="">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>WalkieMap</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.2/peerjs.min.js"></script>
+
+<style>
+/* ═══════════════════════════════════════════════════
+   DESIGN TOKENS
+═══════════════════════════════════════════════════ */
+:root {
+  /* Tipografía */
+  --font-ui:   'DM Sans', system-ui, sans-serif;
+  --font-mono: 'Space Mono', monospace;
+
+  /* Colores base (modo oscuro) */
+  --bg:        #0d0e12;
+  --surface:   #141519;
+  --surface-2: #1c1d24;
+  --surface-3: #242530;
+  --border:    rgba(255,255,255,.07);
+  --border-2:  rgba(255,255,255,.12);
+  --text-1:    #ecedf0;
+  --text-2:    #8a8d9a;
+  --text-3:    #4e5061;
+
+  /* Acento (verde signal) */
+  --accent:    #3ddc97;
+  --accent-2:  #2ab87c;
+  --accent-dim: rgba(61,220,151,.12);
+
+  /* Semánticos */
+  --danger:    #f04f5a;
+  --warn:      #f5a623;
+  --info:      #5b8def;
+  --panic:     #ff3860;
+
+  /* Espaciado */
+  --r:         10px;
+  --r-lg:      14px;
+
+  /* Dimensiones de layout */
+  --sidebar-w: 240px;
+  --map-w:     340px;
+  --ptt-h:     64px;
+  --topbar-h:  52px;
+}
+
+/* Tema claro */
+[data-mode="light"] {
+  --bg:        #f2f3f7;
+  --surface:   #ffffff;
+  --surface-2: #eaebf0;
+  --surface-3: #e0e1e8;
+  --border:    rgba(0,0,0,.07);
+  --border-2:  rgba(0,0,0,.12);
+  --text-1:    #111217;
+  --text-2:    #5a5d6e;
+  --text-3:    #a0a3b0;
+}
+
+/* Colores alternativos */
+[data-color="blue"]   { --accent:#4f9ef5; --accent-2:#3a7fd4; --accent-dim:rgba(79,158,245,.12); }
+[data-color="red"]    { --accent:#f0525a; --accent-2:#d43a42; --accent-dim:rgba(240,82,90,.12); }
+[data-color="violet"] { --accent:#a78bfa; --accent-2:#8b6ef0; --accent-dim:rgba(167,139,250,.12); }
+
+/* ═══════════════════════════════════════════════════
+   RESET
+═══════════════════════════════════════════════════ */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; overflow: hidden; }
+body {
+  font-family: var(--font-ui);
+  font-size: 14px;
+  background: var(--bg);
+  color: var(--text-1);
+  -webkit-tap-highlight-color: transparent;
+  -webkit-font-smoothing: antialiased;
+}
+button  { cursor: pointer; border: none; font-family: var(--font-ui); background: none; }
+input, select { font-family: var(--font-ui); outline: none; }
+button:active { transform: scale(.97); }
+
+/* ═══════════════════════════════════════════════════
+   PANTALLA PERMISOS
+═══════════════════════════════════════════════════ */
+#permisos-screen {
+  position: fixed; inset: 0; z-index: 900;
+  background: rgba(0,0,0,.85);
+  display: flex; align-items: center; justify-content: center;
+  backdrop-filter: blur(8px);
+  transition: opacity .3s;
+}
+#permisos-screen.hidden { opacity: 0; pointer-events: none; }
+
+.perm-card {
+  background: var(--surface);
+  border: 1px solid var(--border-2);
+  border-radius: var(--r-lg);
+  padding: 28px 24px;
+  width: min(360px, 92vw);
+  box-shadow: 0 32px 80px rgba(0,0,0,.6);
+}
+.perm-card h3    { font-size: 16px; font-weight: 700; margin-bottom: 6px; }
+.perm-card > p   { font-size: 13px; color: var(--text-2); line-height: 1.6; margin-bottom: 20px; }
+.perm-item {
+  display: flex; align-items: center; gap: 12px;
+  background: var(--surface-2); border-radius: var(--r);
+  padding: 10px 12px; margin-bottom: 8px;
+}
+.pi-icon   { font-size: 22px; }
+.pi-info   { flex: 1; }
+.pi-title  { font-size: 13px; font-weight: 600; }
+.pi-desc   { font-size: 11px; color: var(--text-2); margin-top: 2px; }
+.pi-status { font-size: 18px; min-width: 24px; text-align: center; }
+.perm-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 20px; }
+
+/* ═══════════════════════════════════════════════════
+   BOTONES BASE
+═══════════════════════════════════════════════════ */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 10px 18px; border-radius: var(--r);
+  font-size: 14px; font-weight: 600;
+  transition: filter .15s, transform .1s;
+  width: 100%;
+}
+.btn:active { transform: scale(.97); }
+.btn-primary { background: var(--accent); color: #000; }
+.btn-primary:hover { filter: brightness(1.1); }
+.btn-ghost {
+  background: var(--surface-2); color: var(--text-1);
+  border: 1px solid var(--border-2);
+}
+.btn-ghost:hover { background: var(--surface-3); }
+.btn-danger { background: var(--danger); color: #fff; }
+.btn-danger:hover { filter: brightness(1.1); }
+.divider { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
+
+/* ═══════════════════════════════════════════════════
+   LOGIN SCREEN
+═══════════════════════════════════════════════════ */
+#login-screen {
+  position: fixed; inset: 0; z-index: 800;
+  display: flex; align-items: center; justify-content: center;
+  background: radial-gradient(ellipse at 55% 35%, rgba(61,220,151,.08) 0%, var(--bg) 65%);
+  transition: opacity .3s;
+}
+#login-screen.hidden { opacity: 0; pointer-events: none; }
+
+.login-card {
+  background: var(--surface);
+  border: 1px solid var(--border-2);
+  border-radius: var(--r-lg);
+  padding: 32px 28px;
+  width: min(400px, 96vw);
+  box-shadow: 0 24px 60px rgba(0,0,0,.5);
+}
+.login-brand {
+  font-family: var(--font-mono);
+  font-size: 20px; font-weight: 700;
+  color: var(--accent); letter-spacing: -1px;
+  margin-bottom: 2px;
+}
+.login-tagline { font-size: 12px; color: var(--text-2); margin-bottom: 22px; }
+
+/* Tabs */
+.tabs {
+  display: flex; gap: 4px;
+  background: var(--surface-2); border-radius: var(--r);
+  padding: 4px; margin-bottom: 20px;
+}
+.tab-btn {
+  flex: 1; padding: 8px; border-radius: 7px;
+  font-size: 13px; font-weight: 600; color: var(--text-2);
+  transition: all .2s;
+}
+.tab-btn.active { background: var(--accent); color: #000; }
+
+.tab-pane { display: none; }
+.tab-pane.active { display: block; }
+
+/* Form fields */
+.field { margin-bottom: 10px; }
+.field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px; }
+.field input, .field-row input {
+  display: block; width: 100%;
+  padding: 11px 14px; border-radius: var(--r);
+  border: 1px solid var(--border-2);
+  background: var(--surface-2); color: var(--text-1);
+  font-size: 14px; transition: border-color .2s;
+}
+.field input:focus, .field-row input:focus { border-color: var(--accent); }
+
+.form-error {
+  font-size: 12px; color: var(--danger);
+  margin-bottom: 8px; display: none;
+}
+.form-error.visible { display: block; }
+
+/* ═══════════════════════════════════════════════════
+   APP SHELL — THREE-COLUMN LAYOUT
+═══════════════════════════════════════════════════ */
+#app {
+  display: none;
+  width: 100%; height: 100%;
+  position: relative;
+  overflow: hidden;
+}
+#app.active { display: flex; flex-direction: row; }
+
+/* ── BACKDROP (mobile only) ── */
+#panel-backdrop {
+  display: none; position: fixed; inset: 0; z-index: 59;
+  background: rgba(0,0,0,.55);
+  backdrop-filter: blur(2px);
+  animation: fadeIn .2s ease;
+}
+#panel-backdrop.visible { display: block; }
+@keyframes fadeIn { from{opacity:0} to{opacity:1} }
+
+/* ── SWIPE HINT EDGES ── */
+.swipe-hint {
+  display: none;
+  position: fixed; top: 0; bottom: 0; width: 4px; z-index: 58;
+  background: linear-gradient(to right, rgba(61,220,151,.3), transparent);
+}
+.swipe-hint-r {
+  background: linear-gradient(to left, rgba(61,220,151,.3), transparent);
+  right: 0;
+}
+@media (max-width: 720px) { .swipe-hint { display: block; } }
+
+/* ═══════════════════════════════════════════════════
+   PANEL SALAS — LEFT COLUMN
+═══════════════════════════════════════════════════ */
+#panel-salas {
+  width: var(--sidebar-w);
+  height: 100%;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  display: flex; flex-direction: column;
+  flex-shrink: 0;
+  z-index: 60;
+  transition: transform .28s cubic-bezier(.4,0,.2,1);
+}
+
+.panel-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 14px 10px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.brand {
+  font-family: var(--font-mono);
+  font-size: 14px; font-weight: 700; color: var(--accent);
+  letter-spacing: -0.5px;
+}
+.btn-panel-close {
+  display: none; color: var(--text-2); font-size: 18px;
+  padding: 4px 8px; border-radius: 6px;
+  transition: background .15s;
+}
+.btn-panel-close:hover { background: var(--surface-2); color: var(--text-1); }
+
+.sec-label {
+  padding: 12px 14px 6px;
+  font-size: 10px; font-weight: 700; letter-spacing: 1px;
+  text-transform: uppercase; color: var(--text-3);
+}
+
+#rooms-list { flex: 1; overflow-y: auto; padding: 0 8px; }
+
+.room-item {
+  display: flex; align-items: center; gap: 9px;
+  padding: 9px 10px; border-radius: 8px; margin-bottom: 2px;
+  cursor: pointer; font-size: 13px; font-weight: 500;
+  transition: background .12s;
+  user-select: none;
+}
+.room-item:hover  { background: var(--surface-2); }
+.room-item.active { background: var(--accent-dim); color: var(--accent); }
+.room-icon { font-size: 15px; flex-shrink: 0; }
+.room-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.rooms-empty {
+  text-align: center; padding: 28px 12px;
+  color: var(--text-3); font-size: 13px; line-height: 1.7;
+}
+.rooms-empty .big { font-size: 28px; display: block; margin-bottom: 8px; }
+
+.btn-new-room {
+  margin: 6px 8px; padding: 9px 12px;
+  border: 1px dashed var(--border-2); border-radius: 8px;
+  color: var(--text-2); font-size: 13px; font-weight: 500;
+  text-align: left; width: calc(100% - 16px);
+  transition: all .2s;
+}
+.btn-new-room:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
+
+/* User bar */
+.user-bar {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 10px 12px;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.user-ava {
+  width: 32px; height: 32px; border-radius: 50%;
+  background: var(--accent); color: #000;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px; font-weight: 700; flex-shrink: 0;
+}
+.user-meta { flex: 1; overflow: hidden; }
+.user-name {
+  font-size: 12px; font-weight: 600;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.user-role { font-size: 11px; color: var(--accent); }
+.user-role.guest { color: var(--warn); }
+.ub-actions { display: flex; gap: 2px; }
+.btn-icon {
+  padding: 5px 6px; border-radius: 6px; font-size: 16px;
+  color: var(--text-2); transition: all .15s;
+}
+.btn-icon:hover { background: var(--surface-2); color: var(--text-1); }
+.btn-icon.danger:hover { color: var(--danger); }
+
+/* ═══════════════════════════════════════════════════
+   PANEL CHAT — CENTER COLUMN
+═══════════════════════════════════════════════════ */
+#panel-chat {
+  flex: 1; min-width: 0;
+  display: flex; flex-direction: column;
+  height: 100%;
+  background: var(--bg);
+  /* Make room for fixed PTT bar */
+  padding-bottom: var(--ptt-h);
+}
+
+/* Topbar */
+.chat-topbar {
+  height: var(--topbar-h);
+  display: flex; align-items: center; gap: 10px;
+  padding: 0 14px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.btn-topbar-left, .btn-topbar-right {
+  display: none; /* hidden on desktop */
+  font-size: 20px; padding: 6px;
+  border-radius: 8px; color: var(--text-2);
+  transition: background .15s;
+  flex-shrink: 0;
+}
+.btn-topbar-left:hover, .btn-topbar-right:hover { background: var(--surface-2); }
+
+/* Botón config — siempre visible en topbar */
+.btn-topbar-cfg {
+  display: flex; align-items: center; justify-content: center;
+  padding: 6px; border-radius: 8px;
+  color: var(--text-2); transition: background .15s, color .15s;
+  flex-shrink: 0;
+}
+.btn-topbar-cfg:hover { background: var(--surface-2); color: var(--text-1); }
+.btn-topbar-cfg.has-alert { color: var(--warn); }
+.chat-room-info { flex: 1; overflow: hidden; }
+.chat-room-name {
+  font-size: 14px; font-weight: 700;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.chat-room-meta {
+  display: flex; align-items: center; gap: 5px;
+  font-size: 11px; color: var(--text-2);
+}
+.status-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--accent); flex-shrink: 0;
+}
+
+/* Placeholder */
+.no-room-placeholder {
+  flex: 1; display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  color: var(--text-3); gap: 10px;
+}
+.no-room-placeholder .big { font-size: 44px; }
+.no-room-placeholder p { font-size: 14px; }
+
+/* Messages */
+.messages {
+  flex: 1; overflow-y: auto;
+  padding: 14px;
+  display: flex; flex-direction: column; gap: 6px;
+  scroll-behavior: smooth;
+}
+.msg { display: flex; gap: 10px; align-items: flex-start; }
+.msg-ava {
+  width: 28px; height: 28px; border-radius: 50%;
+  background: var(--accent); color: #000;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 700; flex-shrink: 0; margin-top: 2px;
+}
+.msg-meta { display: flex; align-items: baseline; gap: 7px; margin-bottom: 3px; }
+.msg-author { font-size: 12px; font-weight: 700; }
+.msg-time   { font-size: 10px; color: var(--text-3); }
+.msg-text   { font-size: 13px; line-height: 1.55; color: var(--text-2); word-break: break-word; }
+.msg-img    { max-width: 200px; border-radius: 8px; margin-top: 4px; display: block; }
+.msg-audio-wrap {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--surface-2); border-radius: 20px;
+  padding: 5px 12px; margin-top: 4px; width: fit-content;
+  font-size: 12px; color: var(--text-2);
+}
+.msg-system {
+  font-size: 12px; color: var(--text-3);
+  text-align: center; padding: 4px 0; font-style: italic;
+}
+
+/* Chat input */
+.chat-input-wrap {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 12px;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.btn-attach {
+  font-size: 18px; padding: 8px;
+  border-radius: 8px; color: var(--text-2);
+  transition: background .15s;
+}
+.btn-attach:hover { background: var(--surface-2); }
+.btn-attach:disabled { opacity: .35; cursor: not-allowed; }
+.chat-input {
+  flex: 1; padding: 10px 14px;
+  border-radius: 22px; border: 1px solid var(--border-2);
+  background: var(--surface-2); color: var(--text-1);
+  font-size: 13px; transition: border-color .2s;
+}
+.chat-input:focus { border-color: var(--accent); }
+.btn-send {
+  width: 36px; height: 36px; border-radius: 50%;
+  background: var(--accent); color: #000;
+  font-size: 15px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  transition: filter .15s;
+}
+.btn-send:hover { filter: brightness(1.1); }
+
+/* ═══════════════════════════════════════════════════
+   PANEL MAPA — RIGHT COLUMN
+═══════════════════════════════════════════════════ */
+#panel-mapa {
+  width: var(--map-w);
+  height: 100%;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  display: flex; flex-direction: column;
+  flex-shrink: 0;
+  z-index: 60;
+  transition: transform .28s cubic-bezier(.4,0,.2,1);
+  overflow: hidden;
+}
+#panel-mapa.hidden-desktop { display: none; }
+
+.map-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 14px 10px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  font-size: 13px; font-weight: 600;
+}
+.btn-panel-close-right {
+  display: none; color: var(--text-2); font-size: 18px;
+  padding: 4px 8px; border-radius: 6px;
+  transition: background .15s;
+}
+.btn-panel-close-right:hover { background: var(--surface-2); }
+
+#leaflet-map {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  /* Leaflet necesita height explícito — lo forzamos vía flex */
+  height: 0; /* override por flex:1 */
+}
+
+.map-search {
+  display: flex; gap: 6px; padding: 10px;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.map-search input {
+  flex: 1; padding: 8px 12px;
+  border-radius: var(--r); border: 1px solid var(--border-2);
+  background: var(--surface-2); color: var(--text-1);
+  font-size: 13px;
+}
+.map-search input:focus { border-color: var(--accent); }
+.btn-map-action {
+  padding: 8px 10px; border-radius: var(--r);
+  background: var(--surface-2); border: 1px solid var(--border-2);
+  font-size: 16px; transition: all .15s;
+}
+.btn-map-action:hover { border-color: var(--accent); background: var(--accent-dim); }
+
+/* ═══════════════════════════════════════════════════
+   PTT BAR — FIXED BOTTOM (siempre visible cuando hay sala con voz)
+═══════════════════════════════════════════════════ */
+#ptt-bar {
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  height: var(--ptt-h);
+  z-index: 70;
+  display: none; /* shown via .visible */
+  align-items: center;
+  padding: 0 14px;
+  gap: 10px;
+  background: var(--surface);
+  border-top: 1px solid var(--border-2);
+  box-shadow: 0 -4px 24px rgba(0,0,0,.3);
+}
+#ptt-bar.visible { display: flex; }
+
+.btn-ghost-mode {
+  padding: 9px 13px; border-radius: 8px;
+  background: var(--surface-2); color: var(--text-1);
+  border: 1px solid var(--border-2);
+  font-size: 12px; font-weight: 600;
+  transition: all .15s; white-space: nowrap;
+}
+.btn-ghost-mode.on {
+  background: rgba(124,106,247,.15); color: #a78bfa;
+  border-color: #7c6af7;
+}
+
+#btn-ptt {
+  flex: 1; height: 42px; border-radius: 22px;
+  background: var(--accent); color: #000;
+  font-size: 13px; font-weight: 700;
+  font-family: var(--font-mono);
+  letter-spacing: -0.3px;
+  transition: all .12s;
+  user-select: none;
+  box-shadow: 0 0 0 0 rgba(61,220,151,.4);
+}
+#btn-ptt.transmitting {
+  background: #2ab87c;
+  animation: ptt-pulse 1s infinite;
+  letter-spacing: 0;
+}
+@keyframes ptt-pulse {
+  0%   { box-shadow: 0 0 0 0   rgba(61,220,151,.5); }
+  70%  { box-shadow: 0 0 0 14px rgba(61,220,151,0); }
+  100% { box-shadow: 0 0 0 0   rgba(61,220,151,0); }
+}
+
+.btn-panic {
+  padding: 9px 13px; border-radius: 8px;
+  background: var(--panic); color: #fff;
+  font-size: 12px; font-weight: 700;
+  white-space: nowrap;
+}
+.btn-panic.flash { animation: pf .25s steps(1) 5; }
+@keyframes pf {
+  0%,100% { background: var(--panic); color: #fff; }
+  50%     { background: #fff; color: var(--panic); }
+}
+
+/* ═══════════════════════════════════════════════════
+   MODALES
+═══════════════════════════════════════════════════ */
+.modal-backdrop {
+  display: none; position: fixed; inset: 0; z-index: 400;
+  background: rgba(0,0,0,.65);
+  align-items: center; justify-content: center;
+  backdrop-filter: blur(4px);
+}
+.modal-backdrop.open { display: flex; }
+
+.modal {
+  background: var(--surface);
+  border: 1px solid var(--border-2);
+  border-radius: var(--r-lg);
+  padding: 24px;
+  width: min(360px, 94vw);
+  max-height: 90vh; overflow-y: auto;
+  box-shadow: 0 24px 64px rgba(0,0,0,.55);
+  animation: modal-in .2s cubic-bezier(.34,1.26,.64,1);
+}
+@keyframes modal-in {
+  from { transform: scale(.92); opacity: 0; }
+  to   { transform: scale(1);   opacity: 1; }
+}
+.modal-title { font-size: 16px; font-weight: 700; margin-bottom: 18px; }
+.modal-field { margin-bottom: 12px; }
+.modal-field input, .modal-field select {
+  display: block; width: 100%;
+  padding: 10px 13px; border-radius: var(--r);
+  border: 1px solid var(--border-2);
+  background: var(--surface-2); color: var(--text-1);
+  font-size: 14px;
+}
+.modal-field input:focus { border-color: var(--accent); }
+.modal-field select option { background: var(--surface); }
+.modal-footer { display: flex; gap: 8px; margin-top: 8px; }
+.modal-footer .btn { flex: 1; margin: 0; }
+
+/* Confirm modal */
+.confirm-modal { text-align: center; }
+.confirm-icon  { font-size: 36px; margin-bottom: 10px; }
+.confirm-title { font-size: 16px; font-weight: 700; margin-bottom: 8px; }
+.confirm-body  { font-size: 13px; color: var(--text-2); line-height: 1.6; margin-bottom: 20px; }
+
+/* Sucesor */
+.successor-list { max-height: 190px; overflow-y: auto; margin-bottom: 14px; }
+.successor-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 12px; border-radius: 8px; margin-bottom: 4px;
+  cursor: pointer; font-size: 13px; transition: background .12s;
+}
+.successor-item:hover { background: var(--surface-2); }
+.successor-item.selected { background: var(--accent-dim); color: var(--accent); }
+.suc-ava {
+  width: 28px; height: 28px; border-radius: 50%;
+  background: var(--accent); color: #000;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 700; flex-shrink: 0;
+}
+
+/* ═══════════════════════════════════════════════════
+   CONFIGURACIÓN (dentro del modal)
+═══════════════════════════════════════════════════ */
+.cfg-section { margin-bottom: 20px; }
+.cfg-label {
+  font-size: 10px; font-weight: 700; letter-spacing: 1px;
+  text-transform: uppercase; color: var(--text-3);
+  margin-bottom: 10px;
+}
+.cfg-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 12px; border-radius: var(--r);
+  background: var(--surface-2); margin-bottom: 6px;
+}
+.cfg-row-label { flex: 1; }
+.cl { font-size: 13px; font-weight: 500; }
+.cs { font-size: 11px; color: var(--text-2); margin-top: 2px; }
+.cfg-row input[type="text"], .cfg-row select {
+  background: var(--surface-3); border: 1px solid var(--border-2);
+  border-radius: 6px; color: var(--text-1);
+  padding: 6px 9px; font-size: 13px; width: 120px;
+}
+.cfg-row input[type="range"] { width: 100px; accent-color: var(--accent); }
+
+/* Toggle */
+.toggle { position: relative; width: 40px; height: 22px; flex-shrink: 0; cursor: pointer; }
+.toggle input { display: none; }
+.toggle-track {
+  position: absolute; inset: 0; border-radius: 11px;
+  background: var(--surface-3); border: 1px solid var(--border-2);
+  transition: background .2s;
+}
+.toggle-track::after {
+  content: ''; position: absolute;
+  width: 16px; height: 16px; border-radius: 50%;
+  background: #fff; top: 2px; left: 2px; transition: left .2s;
+}
+.toggle input:checked + .toggle-track { background: var(--accent); border-color: var(--accent); }
+.toggle input:checked + .toggle-track::after { left: 20px; }
+
+/* Color swatches */
+.color-swatches { display: flex; gap: 8px; }
+.swatch {
+  width: 28px; height: 28px; border-radius: 50%;
+  border: 3px solid transparent; cursor: pointer; transition: border-color .2s;
+}
+.swatch.active { border-color: var(--text-1); }
+
+/* Key badge */
+.key-badge {
+  background: var(--surface-3); border: 2px solid var(--border-2);
+  border-radius: 6px; padding: 5px 12px;
+  font-family: var(--font-mono); font-size: 13px; font-weight: 700;
+  min-width: 44px; text-align: center; cursor: pointer;
+  transition: border-color .2s;
+}
+.key-badge.listening { border-color: var(--accent); color: var(--accent); animation: blink .6s infinite; }
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+/* ═══════════════════════════════════════════════════
+   CONTEXT MENU
+═══════════════════════════════════════════════════ */
+#ctx-menu {
+  display: none; position: fixed; z-index: 500;
+  background: var(--surface);
+  border: 1px solid var(--border-2);
+  border-radius: 10px; padding: 5px;
+  min-width: 165px;
+  box-shadow: 0 12px 40px rgba(0,0,0,.5);
+  animation: modal-in .15s ease;
+}
+#ctx-menu.open { display: block; }
+.ctx-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 12px; border-radius: 7px;
+  font-size: 13px; cursor: pointer; color: var(--text-1);
+  transition: background .1s;
+}
+.ctx-item:hover { background: var(--surface-2); }
+.ctx-item.danger { color: var(--danger); }
+.ctx-item.danger:hover { background: rgba(240,79,90,.1); }
+.ctx-sep { border: none; border-top: 1px solid var(--border); margin: 4px 0; }
+
+/* ═══════════════════════════════════════════════════
+   TOASTS
+═══════════════════════════════════════════════════ */
+#toast-rack {
+  position: fixed; bottom: calc(var(--ptt-h) + 12px); right: 14px;
+  z-index: 800; display: flex; flex-direction: column; gap: 8px;
+  pointer-events: none;
+}
+.toast {
+  background: var(--surface);
+  border: 1px solid var(--border-2);
+  border-left: 4px solid var(--accent);
+  padding: 10px 16px; border-radius: var(--r);
+  font-size: 13px; max-width: 280px;
+  box-shadow: 0 6px 24px rgba(0,0,0,.4);
+  animation: toast-in .3s cubic-bezier(.34,1.26,.64,1);
+}
+.toast.error  { border-left-color: var(--danger); }
+.toast.warn   { border-left-color: var(--warn); }
+.toast.panic  { border-left-color: var(--panic); background: #1a080c; }
+@keyframes toast-in {
+  from { transform: translateX(110%); opacity: 0; }
+  to   { transform: translateX(0);    opacity: 1; }
+}
+
+/* ═══════════════════════════════════════════════════
+   SCROLLBARS
+═══════════════════════════════════════════════════ */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-thumb { background: var(--surface-3); border-radius: 4px; }
+
+/* ═══════════════════════════════════════════════════
+   RESPONSIVE — MOBILE (≤ 720px)
+   Off-canvas panels, swipe-enabled
+═══════════════════════════════════════════════════ */
+@media (max-width: 720px) {
+
+  /* Panel salas: off-canvas izquierda */
+  #panel-salas {
+    position: fixed; top: 0; left: 0; height: 100%;
+    transform: translateX(-100%);
+    box-shadow: 4px 0 28px rgba(0,0,0,.5);
+  }
+  #panel-salas.open { transform: translateX(0); }
+
+  /* Panel mapa: off-canvas derecha */
+  #panel-mapa {
+    position: fixed; top: 0; right: 0;
+    height: 100% !important;
+    width: min(340px, 100vw) !important;
+    transform: translateX(100%);
+    box-shadow: -4px 0 28px rgba(0,0,0,.5);
+    display: flex !important;
+    flex-direction: column;
+  }
+  #panel-mapa.open  { transform: translateX(0); }
+  #panel-mapa.hidden-desktop { display: flex !important; transform: translateX(100%); }
+  #panel-mapa #leaflet-map { flex: 1; min-height: 0; height: auto !important; }
+
+  /* Chat ocupa toda la pantalla */
+  #panel-chat { width: 100%; }
+
+  /* Mostrar botones de topbar */
+  .btn-topbar-left  { display: flex; }
+  .btn-topbar-right { display: flex; }
+  /* btn-topbar-cfg ya está visible siempre, nada que cambiar */
+
+  /* Mostrar botones de cierre en paneles */
+  .btn-panel-close       { display: flex; }
+  .btn-panel-close-right { display: flex; }
+
+  /* Toast: ancho completo */
+  #toast-rack { right: 10px; left: 10px; }
+  .toast { max-width: 100%; }
+
+  /* PTT ligeramente más alto en mobile para touch */
+  :root { --ptt-h: 68px; }
+  #btn-ptt { font-size: 14px; }
+}
+
+/* ═══════════════════════════════════════════════════
+   DESKTOP REFINEMENTS (> 720px)
+═══════════════════════════════════════════════════ */
+@media (min-width: 721px) {
+  /* PTT bar se queda dentro del chat column width */
+  #ptt-bar {
+    left: var(--sidebar-w);
+    right: 0;
+    /* Cuando hay mapa: reducir right */
+  }
+  #ptt-bar.with-map { right: var(--map-w); }
+}
+
+/* Muy pequeño (< 420px): reducir sidebar width */
+@media (max-width: 420px) {
+  :root { --sidebar-w: 200px; }
+}
+</style>
+</head>
+<body>
+
+<!-- ═══════════ PANTALLA PERMISOS ═══════════ -->
+<div id="permisos-screen" class="hidden">
+  <div class="perm-card">
+    <h3>🔐 WalkieMap necesita acceso</h3>
+    <p>Para funcionar correctamente necesitamos algunos permisos. Podés continuar sin otorgarlos.</p>
+    <div class="perm-item">
+      <span class="pi-icon">📍</span>
+      <div class="pi-info">
+        <div class="pi-title">Ubicación GPS</div>
+        <div class="pi-desc">Para mostrarte en el mapa en tiempo real.</div>
+      </div>
+      <span class="pi-status" id="ps-gps">⏳</span>
+    </div>
+    <div class="perm-item">
+      <span class="pi-icon">🎙️</span>
+      <div class="pi-info">
+        <div class="pi-title">Micrófono</div>
+        <div class="pi-desc">Solo activo mientras mantenés el botón PTT.</div>
+      </div>
+      <span class="pi-status" id="ps-mic">⏳</span>
+    </div>
+    <div class="perm-item">
+      <span class="pi-icon">🔔</span>
+      <div class="pi-info">
+        <div class="pi-title">Notificaciones</div>
+        <div class="pi-desc">Alertas de pánico cuando la app está minimizada.</div>
+      </div>
+      <span class="pi-status" id="ps-notif">⏳</span>
+    </div>
+    <div class="perm-actions">
+      <button class="btn btn-primary" onclick="pedirPermisos()">Permitir todo</button>
+      <button class="btn btn-ghost"   onclick="cerrarPermisos()">Continuar sin permisos</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ LOGIN ═══════════ -->
+<div id="login-screen">
+  <div class="login-card">
+    <div class="login-brand">📡 WalkieMap</div>
+    <div class="login-tagline">Conectate con los tuyos — en tiempo real</div>
+
+    <div class="tabs">
+      <button class="tab-btn active" onclick="switchTab('register')">Crear cuenta</button>
+      <button class="tab-btn"        onclick="switchTab('login')">Iniciar sesión</button>
+    </div>
+
+    <!-- REGISTRO -->
+    <div class="tab-pane active" id="tab-register">
+      <div class="field-row">
+        <div class="field"><input type="text" id="r-nombre"   placeholder="Nombre"   maxlength="20"></div>
+        <div class="field"><input type="text" id="r-apellido" placeholder="Apellido" maxlength="30"></div>
+      </div>
+      <div class="field"><input type="text"     id="r-apodo" placeholder="Apodo (visible en el chat)" maxlength="20"></div>
+      <div class="field"><input type="password" id="r-pin"   placeholder="PIN de 4 dígitos" maxlength="4" inputmode="numeric"></div>
+      <div class="form-error" id="r-error">Completá todos los campos correctamente.</div>
+      <button class="btn btn-primary" onclick="registrarse()">Crear cuenta</button>
+      <hr class="divider">
+      <button class="btn btn-ghost" onclick="entrarInvitado()">Entrar como invitado</button>
+    </div>
+
+    <!-- LOGIN -->
+    <div class="tab-pane" id="tab-login">
+      <div class="field"><input type="text"     id="l-apodo" placeholder="Tu apodo" maxlength="20"></div>
+      <div class="field"><input type="password" id="l-pin"   placeholder="PIN" maxlength="4" inputmode="numeric"></div>
+      <div class="form-error" id="l-error">Apodo o PIN incorrecto.</div>
+      <button class="btn btn-primary" onclick="iniciarSesion()">Iniciar sesión</button>
+      <hr class="divider">
+      <button class="btn btn-ghost" onclick="entrarInvitado()">Entrar como invitado</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ APP ═══════════ -->
+<div id="app">
+
+  <div id="panel-backdrop" onclick="cerrarTodosPaneles()"></div>
+  <div class="swipe-hint" id="swipe-left"  style="left:0"></div>
+  <div class="swipe-hint swipe-hint-r" id="swipe-right"></div>
+
+  <!-- PANEL SALAS (izquierda) -->
+  <nav id="panel-salas" aria-label="Salas">
+    <div class="panel-header">
+      <span class="brand">📡 WalkieMap</span>
+      <button class="btn-panel-close" onclick="cerrarPanelSalas()" aria-label="Cerrar">✕</button>
+    </div>
+    <div class="sec-label">Tus Salas</div>
+    <div id="rooms-list">
+      <div class="rooms-empty" id="rooms-empty">
+        <span class="big">📡</span>
+        Sin salas todavía.<br>Creá o uníte a una.
+      </div>
+    </div>
+    <button class="btn-new-room" onclick="abrirModal('modal-crear-sala')">＋ Crear Sala</button>
+    <button class="btn-new-room" onclick="abrirModal('modal-unirse-sala')">🔗 Unirse a Sala</button>
+    <button class="btn-new-room" id="btn-login-sidebar"
+      style="display:none;border-color:var(--warn);color:var(--warn)"
+      onclick="volverALogin()">🔑 Iniciar sesión</button>
+    <div class="user-bar">
+      <div class="user-ava" id="ub-ava">?</div>
+      <div class="user-meta">
+        <div class="user-name" id="ub-name">—</div>
+        <div class="user-role" id="ub-role">● En línea</div>
+      </div>
+      <div class="ub-actions">
+        <button class="btn-icon" title="Permisos (GPS / Mic)" onclick="mostrarPermisos()">🔐</button>
+        <button class="btn-icon" title="Configuración" onclick="abrirConfig()">⚙️</button>
+        <button class="btn-icon danger" title="Cerrar sesión" onclick="cerrarSesion()">↩</button>
+      </div>
+    </div>
+  </nav>
+
+  <!-- PANEL CHAT (centro) -->
+  <main id="panel-chat">
+    <header class="chat-topbar">
+      <button class="btn-topbar-left" onclick="abrirPanelSalas()" aria-label="Salas">☰</button>
+      <div class="chat-room-info">
+        <div class="chat-room-name" id="chat-room-name">Seleccioná una sala</div>
+        <div class="chat-room-meta">
+          <span class="status-dot"></span>
+          <span id="chat-room-meta">0 en línea</span>
+        </div>
+      </div>
+      <button class="btn-topbar-right" id="btn-open-map" onclick="abrirPanelMapa()" aria-label="Abrir mapa" style="display:none">🗺️</button>
+      <button class="btn-topbar-cfg" onclick="abrirConfig()" aria-label="Configuración" title="Configuración">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+        </svg>
+      </button>
+    </header>
+
+    <div class="no-room-placeholder" id="no-room-msg">
+      <span class="big">📡</span>
+      <p>Seleccioná o creá una sala</p>
+    </div>
+
+    <div class="messages" id="messages" style="display:none;flex-direction:column"></div>
+
+    <div class="chat-input-wrap" id="chat-input-area" style="display:none">
+      <button class="btn-attach" id="btn-attach" onclick="adjuntarArchivo()" title="Adjuntar imagen">📎</button>
+      <input class="chat-input" id="chat-input" placeholder="Escribir mensaje…"
+        onkeydown="if(event.key==='Enter')enviarMensaje()">
+      <button class="btn-send" onclick="enviarMensaje()">➤</button>
+    </div>
+    <input type="file" id="file-input" accept="image/*" style="display:none" onchange="enviarImagen(event)">
+  </main>
+
+  <!-- PANEL MAPA (derecha) -->
+  <aside id="panel-mapa" aria-label="Mapa" class="hidden-desktop">
+    <div class="map-header">
+      <span>🗺️ Mapa en vivo</span>
+      <button class="btn-panel-close-right" onclick="cerrarPanelMapa()" aria-label="Cerrar">✕</button>
+    </div>
+    <div id="leaflet-map"></div>
+    <div class="map-search">
+      <input id="inp-destino" placeholder="Buscar destino…">
+      <button class="btn-map-action" onclick="buscarDestino()">📍</button>
+      <button class="btn-map-action" onclick="centrarMe()">🎯</button>
+    </div>
+  </aside>
+
+</div><!-- /#app -->
+
+<!-- PTT BAR — FIXED BOTTOM -->
+<div id="ptt-bar">
+  <button class="btn-ghost-mode" id="btn-ghost" onclick="toggleGhost()">👻 Oculto</button>
+  <button id="btn-ptt"
+    onmousedown="iniciarTx()"  ontouchstart="iniciarTx()"
+    onmouseup="terminarTx()"   ontouchend="terminarTx()"
+    onmouseleave="terminarTx()">
+    🎙 MANTENER (T)
+  </button>
+  <button class="btn-panic" id="btn-panic" onclick="enviarPanico()">🚨 Pánico</button>
+</div>
+
+<!-- ════════════ MODALES ════════════ -->
+
+<!-- CREAR sala -->
+<div class="modal-backdrop" id="modal-crear-sala">
+  <div class="modal">
+    <div class="modal-title">✨ Crear Sala</div>
+    <div class="modal-field"><input type="text" id="mc-nombre" placeholder="Nombre de la sala" maxlength="30"></div>
+    <div class="modal-field">
+      <select id="mc-tipo">
+        <option value="chat">💬 Solo Chat</option>
+        <option value="walkie">🎙️ Walkie-Talkie (Chat + Voz)</option>
+        <option value="map">🗺️ WalkieMap (Chat + Voz + Mapa)</option>
+        <option value="delivery">📦 Delivery (Rutas)</option>
+      </select>
+    </div>
+    <div class="modal-field">
+      <input type="text" id="mc-codigo" placeholder="Código de sala (para compartir)" maxlength="20">
+      <div style="font-size:11px;color:var(--text-3);margin-top:5px">Usá este código para que otros se unan.</div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost"   onclick="cerrarModal('modal-crear-sala')">Cancelar</button>
+      <button class="btn btn-primary" onclick="ejecutarCrear()">Crear Sala</button>
+    </div>
+  </div>
+</div>
+
+<!-- UNIRSE a sala -->
+<div class="modal-backdrop" id="modal-unirse-sala">
+  <div class="modal">
+    <div class="modal-title">🔗 Unirse a Sala</div>
+    <div class="modal-field">
+      <input type="text" id="mu-codigo" placeholder="Código de sala" maxlength="20">
+      <div style="font-size:11px;color:var(--text-3);margin-top:5px">Pedile el código al creador de la sala.</div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost"   onclick="cerrarModal('modal-unirse-sala')">Cancelar</button>
+      <button class="btn btn-primary" onclick="ejecutarUnirse()">Unirse</button>
+    </div>
+  </div>
+</div>
+
+<!-- Confirmar salir -->
+<div class="modal-backdrop" id="modal-confirmar-salir">
+  <div class="modal confirm-modal">
+    <div class="confirm-icon">👋</div>
+    <div class="confirm-title">¿Salir de la sala?</div>
+    <div class="confirm-body">Vas a dejar de ver esta sala. Podés volver a unirte con el mismo código.</div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost"  onclick="cerrarModal('modal-confirmar-salir')">Cancelar</button>
+      <button class="btn btn-danger" onclick="ejecutarSalirSala()">Salir</button>
+    </div>
+  </div>
+</div>
+
+<!-- Confirmar borrar -->
+<div class="modal-backdrop" id="modal-confirmar-borrar">
+  <div class="modal confirm-modal">
+    <div class="confirm-icon">🗑️</div>
+    <div class="confirm-title">¿Borrar la sala?</div>
+    <div class="confirm-body">Esta acción es <strong>permanente</strong>. Se borrará para todos los miembros.</div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost"  onclick="cerrarModal('modal-confirmar-borrar')">Cancelar</button>
+      <button class="btn btn-danger" onclick="ejecutarBorrarSala()">Borrar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Elegir sucesor -->
+<div class="modal-backdrop" id="modal-sucesor">
+  <div class="modal" style="width:min(340px,94vw)">
+    <div class="modal-title">👑 Elegí un nuevo administrador</div>
+    <p style="font-size:13px;color:var(--text-2);margin-bottom:14px;line-height:1.6">Sos el creador. Antes de irte, elegí quién toma el control.</p>
+    <div class="successor-list" id="successor-list"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="cerrarModal('modal-sucesor')">Cancelar</button>
+      <button class="btn" style="background:rgba(124,106,247,.15);color:#a78bfa;border:1px solid #7c6af7;flex:0 0 auto;padding:10px 14px" onclick="elegirAleatorio()">🎲</button>
+      <button class="btn btn-primary" id="btn-confirm-sucesor" onclick="confirmarSucesor()" disabled>Confirmar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Configuración -->
+<div class="modal-backdrop" id="modal-config">
+  <div class="modal" style="width:min(400px,96vw)">
+    <div class="modal-title">⚙️ Configuración</div>
+
+    <div class="cfg-section">
+      <div class="cfg-label">Cuenta</div>
+      <div class="cfg-row">
+        <div class="cfg-row-label"><div class="cl">Nombre</div></div>
+        <input type="text" id="cfg-nombre" style="width:130px">
+      </div>
+      <div class="cfg-row">
+        <div class="cfg-row-label"><div class="cl">Apodo</div><div class="cs">Visible en chat y mapa</div></div>
+        <input type="text" id="cfg-apodo" style="width:130px">
+      </div>
+      <button class="btn btn-primary" style="margin-top:8px" onclick="guardarCuenta()">Guardar</button>
+    </div>
+
+    <div class="cfg-section">
+      <div class="cfg-label">Apariencia</div>
+      <div class="cfg-row">
+        <div class="cfg-row-label"><div class="cl">Modo</div></div>
+        <select id="cfg-modo" onchange="aplicarModo(this.value)">
+          <option value="dark">🌙 Oscuro</option>
+          <option value="light">☀️ Claro</option>
+        </select>
+      </div>
+      <div class="cfg-row">
+        <div class="cfg-row-label"><div class="cl">Color</div></div>
+        <div class="color-swatches">
+          <div class="swatch active" style="background:#3ddc97" data-color=""       onclick="aplicarColor(this)"></div>
+          <div class="swatch"        style="background:#4f9ef5" data-color="blue"   onclick="aplicarColor(this)"></div>
+          <div class="swatch"        style="background:#f0525a" data-color="red"    onclick="aplicarColor(this)"></div>
+          <div class="swatch"        style="background:#a78bfa" data-color="violet" onclick="aplicarColor(this)"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="cfg-section">
+      <div class="cfg-label">Walkie-Talkie</div>
+      <div class="cfg-row">
+        <div class="cfg-row-label"><div class="cl">Tecla PTT</div><div class="cs">Hacé clic y presioná una tecla</div></div>
+        <div class="key-badge" id="key-badge" onclick="escucharTecla()">T</div>
+      </div>
+      <div class="cfg-row">
+        <div class="cfg-row-label"><div class="cl">Vol. entrada</div></div>
+        <input type="range" id="cfg-vol-in" min="0" max="100" value="100">
+      </div>
+      <div class="cfg-row">
+        <div class="cfg-row-label"><div class="cl">Vol. salida</div></div>
+        <input type="range" id="cfg-vol-out" min="0" max="100" value="100" oninput="volOut=this.value/100">
+      </div>
+    </div>
+
+    <div class="cfg-section">
+      <div class="cfg-label">Notificaciones</div>
+      <div class="cfg-row">
+        <div class="cfg-row-label"><div class="cl">Sonido de mensajes</div></div>
+        <label class="toggle"><input type="checkbox" id="cfg-notif-msg" checked><span class="toggle-track"></span></label>
+      </div>
+      <div class="cfg-row">
+        <div class="cfg-row-label"><div class="cl">Sonido de pánico</div></div>
+        <label class="toggle"><input type="checkbox" id="cfg-notif-panic" checked><span class="toggle-track"></span></label>
+      </div>
+    </div>
+
+    <!-- SECCIÓN PERMISOS -->
+    <div class="cfg-section" id="cfg-permisos-section">
+      <div class="cfg-label" style="display:flex;align-items:center;justify-content:space-between">
+        <span>Permisos del sistema</span>
+        <span id="cfg-permisos-badge" style="font-size:11px;padding:2px 8px;border-radius:20px;background:var(--surface-3);color:var(--text-2)">verificando…</span>
+      </div>
+
+      <div class="cfg-row" id="perm-row-gps">
+        <div class="pi-icon" style="font-size:20px;flex-shrink:0">📍</div>
+        <div class="cfg-row-label">
+          <div class="cl">Ubicación GPS</div>
+          <div class="cs" id="perm-desc-gps">Para aparecer en el mapa en tiempo real.</div>
+        </div>
+        <span id="perm-status-gps" style="font-size:18px;flex-shrink:0">⏳</span>
+      </div>
+
+      <div class="cfg-row" id="perm-row-mic">
+        <div class="pi-icon" style="font-size:20px;flex-shrink:0">🎙️</div>
+        <div class="cfg-row-label">
+          <div class="cl">Micrófono</div>
+          <div class="cs" id="perm-desc-mic">Para el Walkie-Talkie PTT.</div>
+        </div>
+        <span id="perm-status-mic" style="font-size:18px;flex-shrink:0">⏳</span>
+      </div>
+
+      <div class="cfg-row" id="perm-row-notif">
+        <div class="pi-icon" style="font-size:20px;flex-shrink:0">🔔</div>
+        <div class="cfg-row-label">
+          <div class="cl">Notificaciones</div>
+          <div class="cs" id="perm-desc-notif">Alertas de pánico en segundo plano.</div>
+        </div>
+        <span id="perm-status-notif" style="font-size:18px;flex-shrink:0">⏳</span>
+      </div>
+
+      <button class="btn btn-primary" style="margin-top:10px" id="cfg-btn-permisos" onclick="pedirPermisosDesdeConfig()">
+        🔐 Activar permisos faltantes
+      </button>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="cerrarModal('modal-config')">Cerrar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Context menu (long press sala) -->
+<div id="ctx-menu">
+  <div class="ctx-item" onclick="confirmarSalirSala()">👋 Salir de la sala</div>
+  <div class="ctx-sep" id="ctx-sep" style="display:none"></div>
+  <div class="ctx-item danger" id="ctx-borrar" onclick="confirmarBorrarSala()" style="display:none">🗑️ Borrar sala</div>
+</div>
+
+<div id="toast-rack"></div>
+
+<!-- ════════════ JAVASCRIPT ════════════ -->
+<script>
+/* ── FIREBASE CONFIG ─────────────────────────────── */
+const FIREBASE_CONFIG = {
+  apiKey:            "AIzaSyAmlO_5TVKo6pY4oelOtI9iDt1fEb6g19A",
+  authDomain:        "walkiemap-42d9d.firebaseapp.com",
+  databaseURL:       "https://walkiemap-42d9d-default-rtdb.firebaseio.com",
+  projectId:         "walkiemap-42d9d",
+  storageBucket:     "walkiemap-42d9d.firebasestorage.app",
+  messagingSenderId: "6915299140",
+  appId:             "1:6915299140:web:9258c688b95160ad382911"
+};
+
+/* ── STATE ───────────────────────────────────────── */
+let db, rtdb;
+let usuario     = null;
+let sala        = null;
+let leafletMap  = null;
+let miMarcador  = null;
+let marcadores  = {};
+let peer        = null;
+let calls       = {};
+let miStream    = null;
+let ghost       = false;
+let watchId     = null;
+let unsubChat   = null;
+let unsubOnline = null;
+let talkieKey   = 'T';
+let keyListening = false;
+let volOut      = 1;
+let ctxSala     = null;
+let sucCandidatos = [], sucSelected = null;
+
+const ROOM_ICONS = { chat:'💬', walkie:'🎙️', map:'🗺️', delivery:'📦' };
+const isMobile   = () => window.innerWidth <= 720;
+
+let cfg = {
+  mode:'dark', color:'',
+  notifMsg:true, notifPanic:true,
+  talkieKey:'T', volIn:100, volOut:100
+};
+
+/* ── FIREBASE ────────────────────────────────────── */
+function initFB() {
+  try {
+    if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
+    db   = firebase.firestore();
+    rtdb = firebase.database();
+    return true;
+  } catch(e) { console.error('Firebase:', e); return false; }
+}
+
+/* ── PERMISOS ────────────────────────────────────── */
+function mostrarPermisos() {
+  document.getElementById('permisos-screen').classList.remove('hidden');
+}
+async function pedirPermisos() {
+  // GPS
+  document.getElementById('ps-gps').textContent = '⏳';
+  try {
+    await new Promise((res,rej) =>
+      navigator.geolocation.getCurrentPosition(res, rej, {timeout:8000, enableHighAccuracy:true})
+    );
+    document.getElementById('ps-gps').textContent = '✅';
+  } catch(e) {
+    document.getElementById('ps-gps').textContent = e.code===1 ? '🚫' : '❌';
+  }
+
+  // Micrófono
+  document.getElementById('ps-mic').textContent = '⏳';
+  try {
+    const s = await navigator.mediaDevices.getUserMedia({audio:true, video:false});
+    s.getTracks().forEach(t => t.stop());
+    document.getElementById('ps-mic').textContent = '✅';
+  } catch(e) {
+    document.getElementById('ps-mic').textContent = e.name==='NotAllowedError' ? '🚫' : '❌';
+  }
+
+  // Notificaciones
+  document.getElementById('ps-notif').textContent = '⏳';
+  try {
+    const r = await Notification.requestPermission();
+    document.getElementById('ps-notif').textContent = r==='granted' ? '✅' : (r==='denied' ? '🚫' : '❌');
+  } catch {
+    document.getElementById('ps-notif').textContent = '❌';
+  }
+
+  // Cerrar después de mostrar resultados
+  setTimeout(cerrarPermisos, 1500);
+}
+function cerrarPermisos() {
+  const el = document.getElementById('permisos-screen');
+  el.classList.add('hidden');
+  setTimeout(() => el.style.display='none', 300);
+}
+
+/* ── LOGIN TABS ──────────────────────────────────── */
+function switchTab(tab) {
+  document.querySelectorAll('.tab-btn').forEach((b,i) =>
+    b.classList.toggle('active', i===0 ? tab==='register' : tab==='login'));
+  document.getElementById('tab-register').classList.toggle('active', tab==='register');
+  document.getElementById('tab-login').classList.toggle('active',    tab==='login');
+}
+
+/* ── REGISTRO / LOGIN ────────────────────────────── */
+function registrarse() {
+  const nombre   = document.getElementById('r-nombre').value.trim();
+  const apellido = document.getElementById('r-apellido').value.trim();
+  const apodo    = document.getElementById('r-apodo').value.trim();
+  const pin      = document.getElementById('r-pin').value.trim();
+  const err      = document.getElementById('r-error');
+  if (!nombre||!apellido||!apodo||pin.length<4||isNaN(pin)) {
+    err.classList.add('visible'); setTimeout(()=>err.classList.remove('visible'),3000); return;
+  }
+  usuario = { id:'u_'+Date.now()+'_'+rnd(), nombre, apellido, apodo, pin, esInvitado:false };
+  localStorage.setItem('wm_u', JSON.stringify(usuario));
+  initFB(); arrancar();
+}
+
+function iniciarSesion() {
+  const apodo = document.getElementById('l-apodo').value.trim();
+  const pin   = document.getElementById('l-pin').value.trim();
+  const err   = document.getElementById('l-error');
+  try {
+    const u = JSON.parse(localStorage.getItem('wm_u')||'null');
+    if (u && u.apodo===apodo && u.pin===pin) { usuario=u; initFB(); arrancar(); return; }
+  } catch {}
+  err.classList.add('visible'); setTimeout(()=>err.classList.remove('visible'),3000);
+}
+
+function entrarInvitado() {
+  usuario = {
+    id:'g_'+Date.now(), nombre:'Invitado', apellido:'',
+    apodo:'inv'+Math.floor(Math.random()*9999), pin:'', esInvitado:true
+  };
+  initFB(); arrancar();
+}
+
+function volverALogin() {
+  limpiarSala();
+  document.getElementById('app').classList.remove('active');
+  const ls = document.getElementById('login-screen');
+  ls.style.display='flex'; ls.classList.remove('hidden');
+  switchTab('login');
+}
+
+/* ── ARRANCAR ────────────────────────────────────── */
+function arrancar() {
+  const ls = document.getElementById('login-screen');
+  ls.classList.add('hidden');
+  setTimeout(() => ls.style.display='none', 300);
+  document.getElementById('app').classList.add('active');
+
+  cargarCfg();
+  cargarSalasLocales();
+
+  document.getElementById('ub-ava').textContent  = usuario.apodo.charAt(0).toUpperCase();
+  document.getElementById('ub-name').textContent = usuario.esInvitado
+    ? 'Invitado' : `${usuario.nombre} (${usuario.apodo})`;
+
+  if (usuario.esInvitado) {
+    document.getElementById('ub-role').textContent = '● Invitado';
+    document.getElementById('ub-role').classList.add('guest');
+    document.getElementById('btn-attach').disabled = true;
+    document.getElementById('btn-login-sidebar').style.display = 'block';
+  }
+
+  if (!window._keysRegistered) {
+    window._keysRegistered = true;
+    document.addEventListener('keydown', e => {
+      if (keyListening) return;
+      if (e.key.toLowerCase()===talkieKey.toLowerCase() && document.activeElement.tagName!=='INPUT') iniciarTx();
+    });
+    document.addEventListener('keyup', e => {
+      if (e.key.toLowerCase()===talkieKey.toLowerCase()) terminarTx();
+    });
+  }
+
+  if (!localStorage.getItem('wm_perms')) {
+    setTimeout(mostrarPermisos, 700);
+    localStorage.setItem('wm_perms','1');
+  }
+
+  // Verificar silenciosamente para mostrar alerta en ícono config
+  setTimeout(verificarAlertaPermisos, 1200);
+
+  setupSwipe();
+}
+
+async function verificarAlertaPermisos() {
+  try {
+    let faltantes = 0;
+    const gps   = await navigator.permissions.query({ name: 'geolocation' });
+    const mic   = await navigator.permissions.query({ name: 'microphone' });
+    if (gps.state !== 'granted')  faltantes++;
+    if (mic.state !== 'granted')  faltantes++;
+    if (Notification.permission !== 'granted') faltantes++;
+    const btn = document.querySelector('.btn-topbar-cfg');
+    if (btn) btn.classList.toggle('has-alert', faltantes > 0);
+  } catch {}
+}
+
+function cerrarSesion() {
+  if (watchId)    navigator.geolocation.clearWatch(watchId);
+  if (unsubChat)  unsubChat();
+  if (unsubOnline) unsubOnline();
+  if (peer)       peer.destroy();
+  if (rtdb && sala) {
+    rtdb.ref(`ubicaciones/${sala.id}/${usuario.id}`).remove();
+    rtdb.ref(`peers/${sala.id}/${usuario.id}`).remove();
+  }
+  usuario=null; sala=null;
+  document.getElementById('app').classList.remove('active');
+  const ls = document.getElementById('login-screen');
+  ls.style.display='flex'; ls.classList.remove('hidden');
+  switchTab('login');
+}
+
+/* ── PANEL CONTROLS ──────────────────────────────── */
+function abrirPanelSalas() {
+  document.getElementById('panel-salas').classList.add('open');
+  document.getElementById('panel-backdrop').classList.add('visible');
+  document.getElementById('panel-mapa').classList.remove('open');
+}
+function cerrarPanelSalas() {
+  document.getElementById('panel-salas').classList.remove('open');
+  document.getElementById('panel-backdrop').classList.remove('visible');
+}
+function abrirPanelMapa() {
+  if (!sala || !['map','delivery'].includes(sala.tipo)) { toast('Esta sala no tiene mapa.','warn'); return; }
+  document.getElementById('panel-mapa').classList.add('open');
+  document.getElementById('panel-backdrop').classList.add('visible');
+  document.getElementById('panel-salas').classList.remove('open');
+  setTimeout(() => { if(leafletMap) leafletMap.invalidateSize(); }, 320);
+}
+function cerrarPanelMapa() {
+  document.getElementById('panel-mapa').classList.remove('open');
+  document.getElementById('panel-backdrop').classList.remove('visible');
+}
+function cerrarTodosPaneles() { cerrarPanelSalas(); cerrarPanelMapa(); }
+
+/* ── SWIPE GESTURES ──────────────────────────────── */
+function setupSwipe() {
+  // Prevent duplicate listeners
+  if (window._swipeReady) return;
+  window._swipeReady = true;
+
+  let startX=0, startY=0, startTime=0;
+  const DIST=55, VERT=45, MAX_T=400;
+
+  document.addEventListener('touchstart', e => {
+    startX    = e.touches[0].clientX;
+    startY    = e.touches[0].clientY;
+    startTime = Date.now();
+  }, {passive:true});
+
+  document.addEventListener('touchend', e => {
+    if (!isMobile()) return;
+    const dx  = e.changedTouches[0].clientX - startX;
+    const dy  = Math.abs(e.changedTouches[0].clientY - startY);
+    const dt  = Date.now() - startTime;
+    if (dy > VERT || dt > MAX_T) return;
+
+    const salasPanelOpen = document.getElementById('panel-salas').classList.contains('open');
+    const mapaPanelOpen  = document.getElementById('panel-mapa').classList.contains('open');
+
+    // Swipe right from left edge → abrir salas
+    if (dx > DIST && startX < 30 && !salasPanelOpen) { abrirPanelSalas(); return; }
+    // Swipe left from right edge → abrir mapa
+    if (dx < -DIST && startX > window.innerWidth-30 && !mapaPanelOpen) { abrirPanelMapa(); return; }
+    // Swipe left while salas open → cerrar salas
+    if (dx < -DIST && salasPanelOpen) { cerrarPanelSalas(); return; }
+    // Swipe right while mapa open → cerrar mapa
+    if (dx > DIST && mapaPanelOpen) { cerrarPanelMapa(); return; }
+  }, {passive:true});
+}
+
+/* ── MODALES ─────────────────────────────────────── */
+function abrirModal(id) { document.getElementById(id).classList.add('open'); }
+function cerrarModal(id) { document.getElementById(id).classList.remove('open'); }
+
+function abrirConfig() {
+  document.getElementById('cfg-nombre').value  = usuario.nombre||'';
+  document.getElementById('cfg-apodo').value   = usuario.apodo||'';
+  document.getElementById('cfg-modo').value    = cfg.mode;
+  document.getElementById('cfg-vol-in').value  = cfg.volIn;
+  document.getElementById('cfg-vol-out').value = cfg.volOut;
+  document.getElementById('cfg-notif-msg').checked   = cfg.notifMsg;
+  document.getElementById('cfg-notif-panic').checked = cfg.notifPanic;
+  document.getElementById('key-badge').textContent   = talkieKey.toUpperCase();
+  abrirModal('modal-config');
+  cerrarPanelSalas();
+  // Verificar estado de permisos al abrir
+  verificarPermisosEnConfig();
+}
+
+// Verificar estado actual de permisos SIN pedir nada
+// Usa permissions API donde está disponible, sino infiere del estado conocido
+async function verificarPermisosEnConfig() {
+  const badge   = document.getElementById('cfg-permisos-badge');
+  const btnPerm = document.getElementById('cfg-btn-permisos');
+  badge.textContent = 'verificando…';
+  badge.style.background = 'var(--surface-3)';
+  badge.style.color = 'var(--text-2)';
+
+  let faltantes = 0;
+
+  function mostrarPermiso(rowId, statusId, descId, estado, textoOk, textoPendiente, textoDenegado) {
+    const ok       = estado === 'granted';
+    const denegado = estado === 'denied';
+    const row      = document.getElementById(rowId);
+    document.getElementById(statusId).textContent = ok ? '✅' : (denegado ? '🚫' : '⚠️');
+    document.getElementById(descId).textContent   = ok ? textoOk : (denegado ? textoDenegado : textoPendiente);
+    row.style.borderLeft   = `3px solid var(${ok ? '--accent' : denegado ? '--danger' : '--warn'})`;
+    row.style.borderRadius = '0 var(--r) var(--r) 0';
+    row.style.paddingLeft  = '12px';
+    if (!ok) faltantes++;
+  }
+
+  // GPS — permissions API disponible en la mayoría de navegadores modernos
+  try {
+    const p = await navigator.permissions.query({ name: 'geolocation' });
+    mostrarPermiso('perm-row-gps','perm-status-gps','perm-desc-gps', p.state,
+      'Activo — aparecés en el mapa en tiempo real.',
+      'No otorgado — tocá "Activar permisos" para solicitarlo.',
+      'Denegado — habilitalo en Ajustes del navegador > Sitios > Ubicación.');
+  } catch {
+    mostrarPermiso('perm-row-gps','perm-status-gps','perm-desc-gps', 'prompt',
+      '','No se pudo verificar — tocá "Activar permisos".','');
+    faltantes++;
+  }
+
+  // Micrófono
+  try {
+    const p = await navigator.permissions.query({ name: 'microphone' });
+    mostrarPermiso('perm-row-mic','perm-status-mic','perm-desc-mic', p.state,
+      'Activo — podés usar el Walkie-Talkie.',
+      'No otorgado — tocá "Activar permisos" para solicitarlo.',
+      'Denegado — habilitalo en Ajustes del navegador > Sitios > Micrófono.');
+  } catch {
+    mostrarPermiso('perm-row-mic','perm-status-mic','perm-desc-mic', 'prompt',
+      '','No se pudo verificar — tocá "Activar permisos".','');
+    faltantes++;
+  }
+
+  // Notificaciones — Notification.permission es síncrono y confiable
+  const notifEstado = (typeof Notification !== 'undefined') ? Notification.permission : 'denied';
+  mostrarPermiso('perm-row-notif','perm-status-notif','perm-desc-notif', notifEstado,
+    'Activo — recibirás alertas de pánico en segundo plano.',
+    'No otorgado — tocá "Activar permisos" para solicitarlo.',
+    'Denegado — habilitalo en Ajustes del navegador > Sitios > Notificaciones.');
+
+  // Badge resumen
+  if (faltantes === 0) {
+    badge.textContent = '✅ Todo activo';
+    badge.style.background = 'var(--accent-dim)';
+    badge.style.color = 'var(--accent)';
+    btnPerm.style.display = 'none';
+    document.querySelector('.btn-topbar-cfg')?.classList.remove('has-alert');
+  } else {
+    badge.textContent = `⚠️ ${faltantes} faltante${faltantes>1?'s':''}`;
+    badge.style.background = 'rgba(245,166,35,.15)';
+    badge.style.color = 'var(--warn)';
+    btnPerm.style.display = '';
+    document.querySelector('.btn-topbar-cfg')?.classList.add('has-alert');
+  }
+}
+
+// Pedir permisos uno por uno — esto SÍ dispara el popup del navegador
+async function pedirPermisosDesdeConfig() {
+  const btn = document.getElementById('cfg-btn-permisos');
+  btn.disabled = true;
+  btn.textContent = '⏳ Solicitando permisos…';
+
+  // 1. GPS — getCurrentPosition es lo único que dispara el popup real
+  const gpsOk = await new Promise(res => {
+    navigator.geolocation.getCurrentPosition(
+      () => res(true),
+      () => res(false),
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  });
+
+  // 2. Micrófono — getUserMedia dispara el popup real
+  let micOk = false;
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    stream.getTracks().forEach(t => t.stop());
+    micOk = true;
+  } catch {}
+
+  // 3. Notificaciones
+  let notifOk = false;
+  try {
+    const r = await Notification.requestPermission();
+    notifOk = r === 'granted';
+  } catch {}
+
+  btn.disabled = false;
+  btn.textContent = '🔐 Activar permisos faltantes';
+
+  // Feedback inmediato sin esperar re-verificación
+  if (gpsOk && micOk && notifOk) {
+    toast('✅ Todos los permisos activados.');
+  } else {
+    const denegados = [
+      !gpsOk && 'GPS',
+      !micOk && 'Micrófono',
+      !notifOk && 'Notificaciones'
+    ].filter(Boolean).join(', ');
+    toast(`⚠️ Pendiente: ${denegados}. Si los denegaste antes, activalos desde ajustes del navegador.`, 'warn');
+  }
+
+  // Re-verificar estado visual
+  await verificarPermisosEnConfig();
+}
+
+/* ── SALAS ───────────────────────────────────────── */
+async function ejecutarCrear() {
+  const nombre = document.getElementById('mc-nombre').value.trim();
+  const tipo   = document.getElementById('mc-tipo').value;
+  const codigo = document.getElementById('mc-codigo').value.trim().toLowerCase().replace(/\s+/g,'_');
+  if (!nombre || !codigo) { toast('Completá nombre y código.', 'error'); return; }
+
+  let salaData = { id:codigo, nombre, tipo, codigo, creadaPor:usuario.id };
+
+  if (db) {
+    const ref = db.collection('salas').doc(codigo);
+    try {
+      const snap = await ref.get();
+      if (snap.exists) { toast('Ese código ya está en uso. Elegí otro.', 'warn'); return; }
+      await ref.set({ nombre, tipo, codigo, creadaPor:usuario.id, ts:Date.now() });
+      await ref.collection('miembros').doc(usuario.id).set({
+        nombre:usuario.nombre, apodo:usuario.apodo, online:true, ts:Date.now()
+      });
+      toast(`Sala "${nombre}" creada ✓`);
+    } catch(e) { toast('Error: '+e.message, 'error'); return; }
+  } else {
+    toast(`Sala "${nombre}" creada localmente ✓`);
+    if (usuario.esInvitado) toast('Solo visible en este dispositivo.', 'warn');
+  }
+
+  guardarSalaLocal(salaData);
+  sala = salaData;
+  cerrarModal('modal-crear-sala');
+  document.getElementById('mc-nombre').value = '';
+  document.getElementById('mc-codigo').value = '';
+  renderRoomItem(sala);
+  seleccionarSala(sala);
+  if (isMobile()) cerrarPanelSalas();
+}
+
+async function ejecutarUnirse() {
+  const codigo = document.getElementById('mu-codigo').value.trim().toLowerCase().replace(/\s+/g,'_');
+  if (!codigo) { toast('Ingresá el código de la sala.', 'error'); return; }
+
+  let salaData = null;
+
+  if (db) {
+    const ref = db.collection('salas').doc(codigo);
+    try {
+      const snap = await ref.get();
+      if (!snap.exists) { toast('No existe una sala con ese código.', 'error'); return; }
+      salaData = { id:codigo, ...snap.data() };
+      await ref.collection('miembros').doc(usuario.id).set({
+        nombre:usuario.nombre, apodo:usuario.apodo, online:true, ts:Date.now()
+      });
+      toast(`Uniéndote a "${salaData.nombre}" ✓`);
+    } catch(e) { toast('Error: '+e.message, 'error'); return; }
+  } else {
+    toast('Sin conexión a Firebase, no se puede verificar el código.', 'warn');
+    salaData = { id:codigo, nombre:codigo, tipo:'chat', codigo, creadaPor:'' };
+  }
+
+  guardarSalaLocal(salaData);
+  sala = salaData;
+  cerrarModal('modal-unirse-sala');
+  document.getElementById('mu-codigo').value = '';
+  renderRoomItem(sala);
+  seleccionarSala(sala);
+  if (isMobile()) cerrarPanelSalas();
+}
+
+function guardarSalaLocal(s) {
+  try {
+    const key='wm_rooms_'+(usuario?.id||'g');
+    const list=JSON.parse(localStorage.getItem(key)||'[]');
+    const idx=list.findIndex(x=>x.id===s.id);
+    if(idx>=0) list[idx]=s; else list.push(s);
+    localStorage.setItem(key,JSON.stringify(list));
+  } catch {}
+}
+
+function cargarSalasLocales() {
+  try {
+    const key='wm_rooms_'+(usuario?.id||'g');
+    const list=JSON.parse(localStorage.getItem(key)||'[]');
+    list.forEach(s=>renderRoomItem(s));
+  } catch {}
+}
+
+function renderRoomItem(s) {
+  document.getElementById('rooms-empty').style.display='none';
+  if (document.getElementById('ri-'+s.id)) return;
+
+  const div = document.createElement('div');
+  div.className='room-item'; div.id='ri-'+s.id;
+  div.innerHTML=`<span class="room-icon">${ROOM_ICONS[s.tipo]||'💬'}</span><span class="room-name">${s.nombre}</span>`;
+  div.onclick = () => { seleccionarSala(s); if(isMobile()) cerrarPanelSalas(); };
+
+  // Long-press → context menu
+  let lpt=null;
+  const startLP = e => {
+    lpt = setTimeout(()=>{
+      lpt=null;
+      div.addEventListener('click', e=>e.stopImmediatePropagation(), {once:true});
+      mostrarCtx(e,s);
+    }, 500);
+  };
+  const cancelLP = ()=>{ if(lpt){clearTimeout(lpt);lpt=null;} };
+  div.addEventListener('mousedown',  startLP);
+  div.addEventListener('touchstart', e=>startLP(e.touches[0]), {passive:true});
+  div.addEventListener('mouseup',    cancelLP);
+  div.addEventListener('mouseleave', cancelLP);
+  div.addEventListener('touchend',   cancelLP);
+  div.addEventListener('touchmove',  cancelLP);
+
+  document.getElementById('rooms-list').appendChild(div);
+}
+
+function seleccionarSala(s) {
+  limpiarSala();
+  sala = s;
+
+  document.querySelectorAll('.room-item').forEach(el=>el.classList.remove('active'));
+  const el = document.getElementById('ri-'+s.id);
+  if (el) el.classList.add('active');
+
+  document.getElementById('chat-room-name').textContent = s.nombre;
+  document.getElementById('no-room-msg').style.display  = 'none';
+  document.getElementById('messages').style.display     = 'flex';
+  document.getElementById('chat-input-area').style.display = 'flex';
+  document.getElementById('messages').innerHTML = '';
+
+  const tieneVoz  = ['walkie','map','delivery'].includes(s.tipo);
+  const tieneMapa = ['map','delivery'].includes(s.tipo);
+
+  // PTT bar
+  const pttBar = document.getElementById('ptt-bar');
+  pttBar.classList.toggle('visible', tieneVoz);
+  pttBar.classList.toggle('with-map', tieneMapa && !isMobile());
+  document.getElementById('btn-ptt').textContent=`🎙 MANTENER (${talkieKey.toUpperCase()})`;
+
+  // Panel chat padding para PTT
+  document.getElementById('panel-chat').style.paddingBottom = tieneVoz ? 'var(--ptt-h)' : '0';
+
+  // Mapa panel
+  const mapaPanel = document.getElementById('panel-mapa');
+  if (tieneMapa) {
+    mapaPanel.style.display = '';
+    if (!isMobile()) mapaPanel.classList.remove('hidden-desktop');
+    iniciarMapa();
+  } else {
+    if (!isMobile()) mapaPanel.classList.add('hidden-desktop');
+  }
+
+  // Botón mapa en topbar (mobile only)
+  document.getElementById('btn-open-map').style.display = tieneMapa ? 'flex' : 'none';
+
+  if (tieneVoz && !usuario.esInvitado) iniciarPeer();
+  escucharChat();
+  escucharOnline();
+  escucharPanico();
+
+  if (tieneMapa) setTimeout(()=>{ if(leafletMap) leafletMap.invalidateSize(); }, 350);
+}
+
+function limpiarSala() {
+  if (unsubChat)   { unsubChat();   unsubChat=null; }
+  if (unsubOnline) { unsubOnline(); unsubOnline=null; }
+  if (watchId)     { navigator.geolocation.clearWatch(watchId); watchId=null; }
+  if (peer)        { peer.destroy(); peer=null; calls={}; }
+  if (rtdb&&sala)  {
+    rtdb.ref(`ubicaciones/${sala.id}`).off();
+    rtdb.ref(`panico/${sala.id}`).off();
+    if(sala.tipo==='delivery') rtdb.ref(`destinos/${sala.id}`).off();
+  }
+  Object.values(marcadores).forEach(m=>{try{m.remove();}catch{}});
+  marcadores={}; miMarcador=null;
+  if (leafletMap) { leafletMap.remove(); leafletMap=null; }
+}
+
+/* ── MAPA ────────────────────────────────────────── */
+function iniciarMapa() {
+  setTimeout(()=>{
+    leafletMap = L.map('leaflet-map').setView([-34.45,-58.70],12);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+      attribution:'© <a href="https://openstreetmap.org">OSM</a>', maxZoom:19
+    }).addTo(leafletMap);
+
+    if (!navigator.geolocation) {
+      toast('GPS no disponible en este navegador.', 'warn');
+    } else {
+      // Pedir permiso explícitamente primero para que el navegador muestre el popup
+      navigator.geolocation.getCurrentPosition(
+        pos => {
+          // Permiso otorgado — arrancar watchPosition
+          publicarUbicacion(pos.coords.latitude, pos.coords.longitude);
+          watchId = navigator.geolocation.watchPosition(
+            p => publicarUbicacion(p.coords.latitude, p.coords.longitude),
+            err => {
+              if (err.code === 1) toast('GPS denegado. Activá la ubicación en tu navegador.', 'error');
+              else toast('GPS: '+err.message, 'warn');
+            },
+            { enableHighAccuracy:true, maximumAge:5000, timeout:15000 }
+          );
+        },
+        err => {
+          if (err.code === 1) toast('📍 GPS denegado. Activá la ubicación en ajustes del navegador.', 'error');
+          else if (err.code === 2) toast('📍 GPS sin señal. Intentá en exterior.', 'warn');
+          else toast('GPS: '+err.message, 'warn');
+        },
+        { enableHighAccuracy:true, timeout:10000 }
+      );
+    }
+
+    if (rtdb) {
+      rtdb.ref(`ubicaciones/${sala.id}`).on('value',snap=>{
+        const data=snap.val()||{};
+        Object.entries(data).forEach(([uid,info])=>{
+          if(uid===usuario.id) return;
+          if(info.ghost){if(marcadores[uid]){marcadores[uid].remove();delete marcadores[uid];}return;}
+          actualizarMarcador(uid,info);
+        });
+      });
+      if (sala.tipo==='delivery') {
+        rtdb.ref(`destinos/${sala.id}`).on('child_added',snap=>{
+          const d=snap.val();
+          marcarDestino(parseFloat(d.lat),parseFloat(d.lon),d.nombre,d.por);
+        });
+      }
+    }
+  },150);
+}
+
+function publicarUbicacion(lat,lng) {
+  if(ghost) return;
+  if(!miMarcador){
+    miMarcador=L.marker([lat,lng],{icon:makeIcon('#3ddc97',14,true)}).addTo(leafletMap);
+    miMarcador.bindPopup(`<b>${usuario.apodo}</b> (Yo)`);
+    leafletMap.setView([lat,lng],15);
+  } else miMarcador.setLatLng([lat,lng]);
+  if(rtdb) rtdb.ref(`ubicaciones/${sala.id}/${usuario.id}`).set({lat,lng,apodo:usuario.apodo,ghost:false,ts:Date.now()});
+}
+
+function actualizarMarcador(uid,info) {
+  if(marcadores[uid]) marcadores[uid].setLatLng([info.lat,info.lng]);
+  else{
+    marcadores[uid]=L.marker([info.lat,info.lng],{icon:makeIcon('#7c6af7',12,false)}).addTo(leafletMap);
+    marcadores[uid].bindPopup(`<b>${info.apodo}</b>`);
+  }
+}
+
+function marcarDestino(lat,lon,nombre,por) {
+  const ico=L.divIcon({html:`<div style="background:var(--danger);width:14px;height:14px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);border:2px solid #fff"></div>`,iconSize:[14,14],iconAnchor:[7,14],className:''});
+  L.marker([lat,lon],{icon:ico}).addTo(leafletMap).bindPopup(`<b>Destino:</b> ${nombre.split(',')[0]}<br><small>por ${por}</small>`);
+}
+
+function makeIcon(color,size,glow) {
+  const s=glow?`box-shadow:0 0 0 4px ${color}33;border:2px solid #fff;`:'border:2px solid #fff;';
+  return L.divIcon({html:`<div style="background:${color};width:${size}px;height:${size}px;border-radius:50%;${s}"></div>`,iconSize:[size,size],iconAnchor:[size/2,size/2],className:''});
+}
+
+function centrarMe() {
+  if(miMarcador) leafletMap.flyTo(miMarcador.getLatLng(),16);
+  else toast('GPS sin señal aún.','warn');
+}
+
+async function buscarDestino() {
+  if(usuario.esInvitado){toast('Invitados no pueden marcar destinos.','warn');return;}
+  const q=document.getElementById('inp-destino').value.trim();
+  if(!q) return; toast('Buscando…');
+  try{
+    const res=await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=1&countrycodes=ar`,{headers:{'Accept-Language':'es'}});
+    const data=await res.json();
+    if(!data.length){toast('Lugar no encontrado.','warn');return;}
+    const{lat,lon,display_name}=data[0];
+    marcarDestino(parseFloat(lat),parseFloat(lon),display_name,usuario.apodo);
+    leafletMap.flyTo([parseFloat(lat),parseFloat(lon)],14);
+    if(rtdb&&sala.tipo==='delivery') rtdb.ref(`destinos/${sala.id}`).push({lat,lon,nombre:display_name,por:usuario.apodo,ts:Date.now()});
+    toast('Destino: '+display_name.split(',')[0]);
+  }catch{toast('Error buscando destino.','error');}
+}
+
+/* ── CHAT ────────────────────────────────────────── */
+function escucharChat() {
+  if(!db) return;
+  unsubChat=db.collection('salas').doc(sala.id)
+    .collection('mensajes').orderBy('ts','asc').limitToLast(80)
+    .onSnapshot(snap=>{
+      snap.docChanges().forEach(c=>{if(c.type==='added') renderMsg(c.doc.data());});
+    });
+}
+
+function renderMsg(msg) {
+  const list=document.getElementById('messages');
+  if(msg.tipo==='sistema'){
+    const d=document.createElement('div');d.className='msg-system';d.textContent=msg.texto;
+    list.appendChild(d);list.scrollTop=list.scrollHeight;return;
+  }
+  const hora=(new Date(msg.ts)).toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'});
+  const ini=(msg.apodo||'?').charAt(0).toUpperCase();
+  const d=document.createElement('div');d.className='msg';
+  if(msg.tipo==='imagen'){
+    d.innerHTML=`<div class="msg-ava">${ini}</div><div class="msg-body"><div class="msg-meta"><span class="msg-author">${msg.apodo}</span><span class="msg-time">${hora}</span></div><img class="msg-img" src="${msg.url}" loading="lazy"></div>`;
+  } else if(msg.tipo==='audio'){
+    d.innerHTML=`<div class="msg-ava">${ini}</div><div class="msg-body"><div class="msg-meta"><span class="msg-author">${msg.apodo}</span><span class="msg-time">${hora}</span></div><div class="msg-audio-wrap"><audio controls src="${msg.url}" style="height:26px"></audio> 🎙️</div></div>`;
+  } else {
+    d.innerHTML=`<div class="msg-ava">${ini}</div><div class="msg-body"><div class="msg-meta"><span class="msg-author">${msg.apodo}</span><span class="msg-time">${hora}</span></div><div class="msg-text">${esc(msg.texto||'')}</div></div>`;
+    if(msg.userId!==usuario.id && cfg.notifMsg) pingSound();
+  }
+  list.appendChild(d);list.scrollTop=list.scrollHeight;
+}
+
+async function enviarMensaje() {
+  const inp=document.getElementById('chat-input');
+  const txt=inp.value.trim();if(!txt||!sala)return;
+  inp.value='';
+  const msg={tipo:'texto',texto:txt,apodo:usuario.apodo,userId:usuario.id,ts:Date.now()};
+  if(db) await db.collection('salas').doc(sala.id).collection('mensajes').add(msg);
+  else renderMsg(msg);
+}
+
+function adjuntarArchivo(){
+  if(usuario.esInvitado){toast('Invitados no pueden adjuntar.','warn');return;}
+  document.getElementById('file-input').click();
+}
+async function enviarImagen(ev){
+  const file=ev.target.files[0];if(!file||!sala)return;
+  if(file.size>500*1024){toast('Imagen muy grande. Máx 500KB.','warn');return;}
+  const reader=new FileReader();
+  reader.onload=async e=>{
+    const msg={tipo:'imagen',url:e.target.result,apodo:usuario.apodo,userId:usuario.id,ts:Date.now()};
+    if(db) await db.collection('salas').doc(sala.id).collection('mensajes').add(msg);
+    else renderMsg(msg);
+  };
+  reader.readAsDataURL(file);ev.target.value='';
+}
+
+/* ── ONLINE ──────────────────────────────────────── */
+function escucharOnline(){
+  if(!db) return;
+  unsubOnline=db.collection('salas').doc(sala.id).collection('miembros').onSnapshot(snap=>{
+    let n=0;snap.forEach(d=>{if(d.data().online)n++;});
+    document.getElementById('chat-room-meta').innerHTML=`<span class="status-dot"></span> ${n} en línea`;
+  });
+}
+
+/* ── WALKIE-TALKIE ───────────────────────────────── */
+function iniciarPeer(){
+  const pid=('wm_'+sala.id+'_'+usuario.id).replace(/[^a-zA-Z0-9_-]/g,'_').slice(0,72);
+  peer=new Peer(pid,{debug:0});
+  peer.on('open',id=>{
+    if(rtdb) rtdb.ref(`peers/${sala.id}/${usuario.id}`).set({peerId:id,apodo:usuario.apodo,ts:Date.now()});
+  });
+  peer.on('call',call=>{
+    navigator.mediaDevices.getUserMedia({audio:true,video:false})
+      .then(stream=>{miStream=stream;call.answer(stream);call.on('stream',r=>reproducir(r,call.peer));calls[call.peer]=call;})
+      .catch(()=>call.answer(null));
+  });
+  peer.on('error',e=>{if(e.type!=='peer-unavailable')console.warn('Peer:',e.type);});
+}
+
+async function iniciarTx(){
+  if(!sala||usuario.esInvitado) return;
+  if(!['walkie','map','delivery'].includes(sala.tipo)) return;
+  const btn=document.getElementById('btn-ptt');
+  if(btn.classList.contains('transmitting')) return;
+  if(!peer||peer.destroyed) iniciarPeer();
+  btn.classList.add('transmitting'); btn.textContent='🔴 TX...';
+  try {
+    // Pedir micrófono con mensaje de error claro según el tipo de fallo
+    miStream = await navigator.mediaDevices.getUserMedia({audio:true, video:false}).catch(err => {
+      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError')
+        toast('🎙️ Micrófono denegado. Activalo en ajustes del navegador.', 'error');
+      else if (err.name === 'NotFoundError')
+        toast('🎙️ No se encontró micrófono en este dispositivo.', 'error');
+      else
+        toast('🎙️ No se pudo acceder al micrófono: ' + err.message, 'error');
+      throw err;
+    });
+    if (rtdb) {
+      const snap = await rtdb.ref(`peers/${sala.id}`).once('value');
+      const data = snap.val() || {};
+      for (const [uid,info] of Object.entries(data)) {
+        if (uid===usuario.id || !info.peerId) continue;
+        try {
+          const call = peer.call(info.peerId, miStream);
+          call.on('stream', r => reproducir(r, info.peerId));
+          call.on('error', ()=>{});
+          calls[info.peerId] = call;
+        } catch {}
+      }
+    }
+  } catch { terminarTx(); }
+}
+
+function terminarTx(){
+  const btn=document.getElementById('btn-ptt');
+  if(!btn.classList.contains('transmitting')) return;
+  btn.classList.remove('transmitting');
+  btn.textContent=`🎙 MANTENER (${talkieKey.toUpperCase()})`;
+  if(miStream){miStream.getTracks().forEach(t=>t.stop());miStream=null;}
+  Object.values(calls).forEach(c=>{try{c.close();}catch{}});
+  calls={};
+}
+
+function reproducir(stream,pid){
+  const key='aud_'+pid.replace(/[^a-zA-Z0-9]/g,'_');
+  let el=document.getElementById(key);
+  if(!el){el=document.createElement('audio');el.id=key;el.autoplay=true;el.style.display='none';document.body.appendChild(el);}
+  el.volume=volOut;el.srcObject=stream;
+}
+
+/* ── GHOST ───────────────────────────────────────── */
+function toggleGhost(){
+  ghost=!ghost;
+  const btn=document.getElementById('btn-ghost');
+  btn.classList.toggle('on',ghost);
+  btn.textContent=ghost?'👁️‍🗨️ Oculto':'👻 Oculto';
+  if(miMarcador){if(ghost)miMarcador.remove();else if(leafletMap)miMarcador.addTo(leafletMap);}
+  if(rtdb&&sala) rtdb.ref(`ubicaciones/${sala.id}/${usuario.id}/ghost`).set(ghost);
+  toast(ghost?'👻 Estás oculto del mapa.':'📍 Sos visible de nuevo.');
+}
+
+/* ── PÁNICO ──────────────────────────────────────── */
+async function enviarPanico(){
+  const btn=document.getElementById('btn-panic');
+  btn.classList.add('flash');setTimeout(()=>btn.classList.remove('flash'),1500);
+  const msg={tipo:'sistema',texto:`🚨 ¡PÁNICO! ${usuario.apodo} necesita ayuda urgente!`,apodo:usuario.apodo,userId:usuario.id,ts:Date.now()};
+  if(db&&sala) await db.collection('salas').doc(sala.id).collection('mensajes').add(msg);
+  else renderMsg(msg);
+  if(rtdb&&sala){
+    const ll=miMarcador?miMarcador.getLatLng():null;
+    rtdb.ref(`panico/${sala.id}`).set({apodo:usuario.apodo,lat:ll?.lat||null,lng:ll?.lng||null,uid:usuario.id,ts:Date.now()});
+  }
+  toast('🚨 Alerta enviada.','error');
+}
+
+function escucharPanico(){
+  if(!rtdb) return;
+  let lastTs=0;
+  rtdb.ref(`panico/${sala.id}`).on('value',snap=>{
+    const d=snap.val();
+    if(!d||d.uid===usuario.id||d.ts<=lastTs) return;
+    lastTs=d.ts;
+    toast(`🚨 PÁNICO: ${d.apodo} necesita ayuda!`,'panic');
+    if(d.lat&&d.lng&&leafletMap) leafletMap.flyTo([d.lat,d.lng],16);
+  });
+}
+
+/* ── CONTEXT MENU ────────────────────────────────── */
+async function mostrarCtx(e,s){
+  ctxSala=s;
+  let esCreador=false;
+  if(db){try{const snap=await db.collection('salas').doc(s.id).get();if(snap.exists)esCreador=snap.data().creadaPor===usuario.id;}catch{}}
+  document.getElementById('ctx-sep').style.display   = esCreador?'block':'none';
+  document.getElementById('ctx-borrar').style.display= esCreador?'flex':'none';
+  const menu=document.getElementById('ctx-menu');
+  const x=Math.min(e.clientX||80, window.innerWidth-180);
+  const y=Math.min(e.clientY||80, window.innerHeight-120);
+  menu.style.left=x+'px'; menu.style.top=y+'px';
+  menu.classList.add('open');
+  setTimeout(()=>{
+    document.addEventListener('click',cerrarCtx,{once:true});
+    document.addEventListener('touchstart',cerrarCtx,{once:true});
+  },50);
+}
+function cerrarCtx(){ document.getElementById('ctx-menu').classList.remove('open'); }
+function confirmarSalirSala(){ cerrarCtx(); abrirModal('modal-confirmar-salir'); }
+function confirmarBorrarSala(){ cerrarCtx(); abrirModal('modal-confirmar-borrar'); }
+
+async function ejecutarSalirSala(){
+  cerrarModal('modal-confirmar-salir');
+  if(!ctxSala) return;
+  if(db){
+    try{
+      const snap=await db.collection('salas').doc(ctxSala.id).get();
+      if(snap.exists&&snap.data().creadaPor===usuario.id){
+        const mSnap=await db.collection('salas').doc(ctxSala.id).collection('miembros').get();
+        const otros=mSnap.docs.filter(d=>d.id!==usuario.id).map(d=>({id:d.id,...d.data()}));
+        if(!otros.length){await borrarSalaFull(ctxSala.id);quitarSalaUI(ctxSala.id);toast('Sala borrada (sin más miembros).');ctxSala=null;return;}
+        mostrarSucesor(otros);return;
+      }
+    }catch(e){console.error(e);}
+  }
+  await salirDirecto(ctxSala.id);
+}
+
+async function ejecutarBorrarSala(){
+  cerrarModal('modal-confirmar-borrar');
+  if(!ctxSala) return;
+  await borrarSalaFull(ctxSala.id);quitarSalaUI(ctxSala.id);toast('Sala borrada.');ctxSala=null;
+}
+
+function mostrarSucesor(miembros){
+  sucCandidatos=miembros;sucSelected=null;
+  const list=document.getElementById('successor-list');list.innerHTML='';
+  document.getElementById('btn-confirm-sucesor').disabled=true;
+  miembros.forEach(m=>{
+    const d=document.createElement('div');d.className='successor-item';d.id='suc-'+m.id;
+    d.innerHTML=`<div class="suc-ava">${(m.apodo||'?').charAt(0).toUpperCase()}</div><span>${m.apodo||m.nombre||m.id}</span>`;
+    d.onclick=()=>{document.querySelectorAll('.successor-item').forEach(el=>el.classList.remove('selected'));d.classList.add('selected');sucSelected=m;document.getElementById('btn-confirm-sucesor').disabled=false;};
+    list.appendChild(d);
+  });
+  abrirModal('modal-sucesor');
+}
+
+function elegirAleatorio(){
+  if(!sucCandidatos.length) return;
+  const m=sucCandidatos[Math.floor(Math.random()*sucCandidatos.length)];
+  document.querySelectorAll('.successor-item').forEach(el=>el.classList.remove('selected'));
+  const el=document.getElementById('suc-'+m.id);if(el)el.classList.add('selected');
+  sucSelected=m;document.getElementById('btn-confirm-sucesor').disabled=false;
+  toast(`🎲 Seleccionado: ${m.apodo||m.nombre}`);
+}
+
+async function confirmarSucesor(){
+  if(!sucSelected||!ctxSala) return;
+  cerrarModal('modal-sucesor');
+  if(db) try{await db.collection('salas').doc(ctxSala.id).update({creadaPor:sucSelected.id});}catch{}
+  toast(`👑 ${sucSelected.apodo||sucSelected.nombre} es el nuevo admin.`);
+  await salirDirecto(ctxSala.id);
+}
+
+async function salirDirecto(salaId){
+  if(db) try{await db.collection('salas').doc(salaId).collection('miembros').doc(usuario.id).delete();}catch{}
+  if(rtdb){rtdb.ref(`ubicaciones/${salaId}/${usuario.id}`).remove();rtdb.ref(`peers/${salaId}/${usuario.id}`).remove();}
+  quitarSalaUI(salaId);toast('Saliste de la sala.');ctxSala=null;
+}
+
+async function borrarSalaFull(salaId){
+  if(!db) return;
+  try{
+    const del=async col=>{const s=await col.limit(50).get();if(s.empty)return;const b=db.batch();s.docs.forEach(d=>b.delete(d.ref));await b.commit();};
+    await del(db.collection('salas').doc(salaId).collection('mensajes'));
+    await del(db.collection('salas').doc(salaId).collection('miembros'));
+    await db.collection('salas').doc(salaId).delete();
+  }catch(e){console.error(e);}
+  if(rtdb){['ubicaciones','peers','panico','destinos'].forEach(k=>rtdb.ref(`${k}/${salaId}`).remove());}
+}
+
+function quitarSalaUI(salaId){
+  if(sala&&sala.id===salaId){
+    limpiarSala();sala=null;
+    document.getElementById('no-room-msg').style.display='flex';
+    document.getElementById('messages').style.display='none';
+    document.getElementById('chat-input-area').style.display='none';
+    document.getElementById('ptt-bar').classList.remove('visible');
+    document.getElementById('chat-room-name').textContent='Seleccioná una sala';
+    document.getElementById('panel-mapa').classList.add('hidden-desktop');
+  }
+  try{const key='wm_rooms_'+(usuario?.id||'g');const list=JSON.parse(localStorage.getItem(key)||'[]');localStorage.setItem(key,JSON.stringify(list.filter(x=>x.id!==salaId)));}catch{}
+  const el=document.getElementById('ri-'+salaId);if(el)el.remove();
+  if(!document.querySelectorAll('.room-item').length) document.getElementById('rooms-empty').style.display='block';
+}
+
+/* ── CONFIG ──────────────────────────────────────── */
+function cargarCfg(){
+  try{const s=localStorage.getItem('wm_cfg');if(s)cfg={...cfg,...JSON.parse(s)};}catch{}
+  talkieKey=cfg.talkieKey||'T';
+  volOut=cfg.volOut/100;
+  aplicarModo(cfg.mode,false);
+  if(cfg.color) document.documentElement.setAttribute('data-color',cfg.color);
+}
+function guardarCfg(){ localStorage.setItem('wm_cfg',JSON.stringify(cfg)); }
+
+function guardarCuenta(){
+  const nombre=document.getElementById('cfg-nombre').value.trim();
+  const apodo =document.getElementById('cfg-apodo').value.trim();
+  if(!nombre||!apodo){toast('Completá nombre y apodo.','error');return;}
+  usuario.nombre=nombre;usuario.apodo=apodo;
+  localStorage.setItem('wm_u',JSON.stringify(usuario));
+  document.getElementById('ub-name').textContent=`${nombre} (${apodo})`;
+  document.getElementById('ub-ava').textContent=apodo.charAt(0).toUpperCase();
+  toast('Datos actualizados ✓');
+}
+
+function aplicarModo(mode,save=true){
+  cfg.mode=mode;
+  document.documentElement.setAttribute('data-mode',mode==='light'?'light':'');
+  if(save) guardarCfg();
+}
+
+function aplicarColor(btn){
+  document.querySelectorAll('.swatch').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  const color=btn.dataset.color;cfg.color=color;
+  if(color) document.documentElement.setAttribute('data-color',color);
+  else document.documentElement.removeAttribute('data-color');
+  guardarCfg();
+}
+
+function escucharTecla(){
+  if(keyListening) return;
+  keyListening=true;
+  const badge=document.getElementById('key-badge');
+  badge.classList.add('listening');badge.textContent='…';
+  const handler=e=>{
+    e.preventDefault();
+    if(['Shift','Control','Alt','Meta','CapsLock'].includes(e.key)) return;
+    talkieKey=e.key;cfg.talkieKey=e.key;
+    badge.textContent=e.key.toUpperCase();badge.classList.remove('listening');
+    keyListening=false;document.removeEventListener('keydown',handler);
+    guardarCfg();toast(`Tecla PTT → ${e.key.toUpperCase()}`);
+    if(sala) document.getElementById('btn-ptt').textContent=`🎙 MANTENER (${e.key.toUpperCase()})`;
+  };
+  document.addEventListener('keydown',handler);
+}
+
+/* ── SONIDO ──────────────────────────────────────── */
+function pingSound(){
+  if(!cfg.notifMsg) return;
+  try{
+    const ctx=new(window.AudioContext||window.webkitAudioContext)();
+    const o=ctx.createOscillator(),g=ctx.createGain();
+    o.connect(g);g.connect(ctx.destination);
+    o.frequency.value=880;g.gain.value=0.07;
+    o.start();o.stop(ctx.currentTime+.08);o.onended=()=>ctx.close();
+  }catch{}
+}
+
+/* ── TOAST ───────────────────────────────────────── */
+function toast(msg,tipo='info'){
+  const el=document.createElement('div');
+  el.className=`toast ${tipo}`;el.textContent=msg;
+  document.getElementById('toast-rack').appendChild(el);
+  setTimeout(()=>el.remove(),4500);
+}
+
+/* ── HELPERS ─────────────────────────────────────── */
+function esc(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function rnd(){return Math.random().toString(36).slice(2,6);}
+
+/* ── RESIZE ──────────────────────────────────────── */
+window.addEventListener('resize',()=>{
+  if(!sala) return;
+  const tieneMapa=['map','delivery'].includes(sala.tipo);
+  if(!isMobile()){
+    if(tieneMapa){
+      document.getElementById('panel-mapa').classList.remove('open');
+      document.getElementById('panel-mapa').classList.remove('hidden-desktop');
+    }
+    document.getElementById('panel-backdrop').classList.remove('visible');
+    document.getElementById('panel-salas').classList.remove('open');
+    const pttBar=document.getElementById('ptt-bar');
+    pttBar.classList.toggle('with-map', tieneMapa);
+  }
+  if(leafletMap) setTimeout(()=>leafletMap.invalidateSize(),200);
+});
+
+/* ── RESTAURAR SESIÓN ────────────────────────────── */
+window.addEventListener('DOMContentLoaded',()=>{
+  try{
+    const saved=localStorage.getItem('wm_u');
+    if(saved){usuario=JSON.parse(saved);initFB();arrancar();}
+  }catch{localStorage.removeItem('wm_u');}
+});
+</script>
+</body>
+</html>
